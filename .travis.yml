@@ -1,0 +1,58 @@
+---
+services: docker
+
+env:
+  global:
+    php_version: "7.1"
+
+  # Test package install on all supported OSes.
+  - distro: gallium
+    playbook: test.yml
+    php_version: "7.1"
+
+  - distro: xenial
+    playbook: test.yml
+    php_version: "7.1"
+
+  # PHP 7.2
+  - distro: xenial
+    playbook: test-7.2.yml
+    php_version: "7.2"
+
+  # Only test source install on latest supported OSes.
+  - distro: xenial
+    playbook: test-source.yml
+    php_version: 7.1.9
+
+script:
+  # Configure test script so we can run extra tests after playbook is run.
+  - export container_id=$(date +%s)
+  - export cleanup=false
+  - export test_suite=false
+
+  # Run tests.
+  - chmod +x ${PWD}/tests/run-test.sh
+  - ${PWD}/tests/run-test.sh
+
+  # Run script to test PHP version.
+  - 'docker exec ${container_id} env TERM=xterm php -v | grep -F "${php_version}."'
+
+  # Ensure PHP is installed and at the right version.
+  - 'docker exec --tty ${container_id} env TERM=xterm which php'
+  - 'docker exec --tty ${container_id} env TERM=xterm test -x /usr/bin/php'
+
+  - 'docker exec --tty ${container_id} env TERM=xterm php --version'
+  - 'docker exec --tty ${container_id} env TERM=xterm /usr/bin/php --version | grep -qF "PHP ${php_version}"'
+
+  # Ensure PHP configurations have taken effect.
+  - docker exec --tty ${container_id} env TERM=xterm php -i | grep 'memory_limit.*192'
+
+  # Check the status of PHP-FPM.
+  - |
+    if [ "${playbook}" == "test.yml" ]; then
+      docker exec --tty ${container_id} env TERM=xterm systemctl --no-pager status php${php_version}-fpm status
+      docker exec --tty ${container_id} env TERM=xterm systemctl --no-pager status php${php_version}-fpm status | grep -qF "fpm.service; enabled"
+    fi
+
+notifications:
+  webhooks: https://galaxy.ansible.com/api/v1/notifications/

@@ -1,0 +1,80 @@
+---
+- hosts: all
+
+  vars:
+    php_enable_webserver: false
+    php_version: "7.1"
+    php_enable_php_fpm: true
+    php_memory_limit: "192M"
+    php_install_recommends: no
+
+  pre_tasks:
+    - name: Update apt cache
+      apt: update_cache=yes cache_valid_time=600
+      changed_when: false
+
+    - name: Ensure git is installed
+      apt:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - git
+        - git-core
+        - git-svn
+
+    - name: Add repository for PHP 7.
+      apt_repository: repo='ppa:ondrej/php'
+
+    - name: Add dependencies for PHP versions
+      apt:
+        name: "{{ item }}"
+      with_items:
+        - apt-transport-https
+        - ca-certificates
+
+    - name: Add Ondrej Sury's apt key
+      apt_key:
+        url: https://packages.sury.org/php/apt.gpg
+        state: present
+
+    - name: Add Ondrej Sury's repo
+      apt_repository:
+        repo: "deb https://packages.sury.org/php/ {{ ansible_distribution_release }} main"
+        state: present
+      register: php_ondrej_debian_repo
+
+    - name: Update apt caches after repo is added
+      apt: update_cache=yes
+      when: php_ondrej_debian_repo.changed
+
+    - name: Display the Ansible version info
+      debug:
+        var: ansible_version
+        verbosity: 4
+
+    - name: Display all variables/facts known for a host
+      debug:
+        var: hostvars[inventory_hostname]
+        verbosity: 4
+
+  roles:
+    - role_under_test
+
+  post_tasks:
+    - name: Run test suite
+      command: "{{ item }}"
+      changed_when: false
+      register: test_results
+      with_items:
+        - nano --version
+
+    - name: Print out test results variable
+      debug: 
+        var: test_results
+        verbosity: 2
+
+    - name: Print out test results
+      debug: 
+        msg: "{{ item.stdout }}"
+        verbosity: 1
+      with_items: "{{ test_results.results }}"

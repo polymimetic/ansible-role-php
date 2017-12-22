@@ -1,0 +1,145 @@
+---
+# tasks file for php
+
+# Setup Variables
+- name: Define PHP variables.
+  set_fact: "{{ item.key }}={{ hostvars[inventory_hostname][item.value] }}"
+  when:
+    - hostvars[inventory_hostname][item.key] is undefined
+    - hostvars[inventory_hostname][item.value] is defined
+  with_dict:
+    php_conf_paths: __php_conf_paths
+    php_extension_conf_paths: __php_extension_conf_paths
+    php_fpm_daemon: __php_fpm_daemon
+    php_fpm_conf_path: __php_fpm_conf_path
+    php_fpm_pool_conf_path: __php_fpm_pool_conf_path
+    php_mysql_package: __php_mysql_package
+    php_redis_package: __php_redis_package
+    php_memcached_package: __php_memcached_package
+    php_pgsql_package: __php_pgsql_package
+    php_tideways_module_path: __php_tideways_module_path
+    php_uploadprogress_module_path: __php_uploadprogress_module_path
+    php_xdebug_module_path: __php_xdebug_module_path
+    php_xhprof_module_path: __php_xhprof_module_path
+    php_packages: __php_packages
+
+- name: Set the correct opcache filename (Ubuntu/Debian).
+  set_fact:
+    php_opcache_conf_filename: "10-opcache.ini"
+
+# Add Repositories
+- name: Add repository for PHP versions (Ubuntu).
+  apt_repository: repo='ppa:ondrej/php'
+  when: ansible_distribution == "Ubuntu"
+
+- name: Add repository for PHP 5 compatibility packages (Ubuntu).
+  apt_repository: repo='ppa:ondrej/php5-compat'
+  when: php_version == "5.6" and ansible_distribution == "Ubuntu"
+
+# Add Dependencies
+- name: Add dependencies for PHP versions (Debian).
+  apt:
+    name: "{{ item }}"
+  with_items:
+    - apt-transport-https
+    - ca-certificates
+  when: ansible_distribution == "Debian"
+
+# Add Apt Keys
+- name: Add Ondrej Sury's apt key (Debian).
+  apt_key:
+    url: https://packages.sury.org/php/apt.gpg
+    state: present
+  when: ansible_distribution == "Debian"
+
+- name: Add Ondrej Sury's repo (Debian).
+  apt_repository:
+    repo: "deb https://packages.sury.org/php/ {{ ansible_distribution_release }} main"
+    state: present
+  register: php_ondrej_debian_repo
+  when: ansible_distribution == "Debian"
+
+- name: Update apt caches after repo is added (Debian).
+  apt: update_cache=yes
+  when: php_ondrej_debian_repo.changed and (ansible_distribution == "Debian")
+
+# PHP package purges.
+- name: Purge PHP version packages.
+  apt:
+    name: "{{ item }}"
+    state: absent
+    purge: yes
+    force: yes
+  when: "'php' + php_version not in item"
+  with_items:
+    - php5.6-common
+    - php7.0-common
+    - php7.1-common
+    - php7.2-common
+
+# Setup tasks
+- name: Set the correct XHProf package when PHP 5.6 is used.
+  set_fact:
+    xhprof_download_url: https://github.com/phacility/xhprof/archive/master.tar.gz
+    xhprof_download_folder_name: xhprof-master
+  when: php_version == '5.6'
+
+# Variable Setup
+- name: Define php_packages.
+  set_fact:
+    php_packages: "{{ __php_packages | list }}"
+  when: php_packages is not defined
+
+- name: Define extra php_packages.
+  set_fact:
+    php_packages: "{{ php_packages | list + php_packages_extra | list }}"
+  when: php_packages_extra is defined
+
+- name: Define php_webserver_daemon.
+  set_fact:
+    php_webserver_daemon: "{{ __php_webserver_daemon }}"
+  when: php_webserver_daemon is not defined
+
+- name: Define php_conf_paths.
+  set_fact:
+    php_conf_paths: "{{ __php_conf_paths }}"
+  when: php_conf_paths is not defined
+
+- name: Define php_extension_conf_paths.
+  set_fact:
+    php_extension_conf_paths: "{{ __php_extension_conf_paths }}"
+  when: php_extension_conf_paths is not defined
+
+- name: Define php_apc_conf_filename.
+  set_fact:
+    php_apc_conf_filename: "{{ __php_apc_conf_filename }}"
+  when: php_apc_conf_filename is not defined
+
+- name: Define php_opcache_conf_filename (Ubuntu 16.04).
+  set_fact:
+    php_opcache_conf_filename: "10-opcache.ini"
+  when: php_opcache_conf_filename is not defined and ansible_distribution_version == "16.04"
+
+- name: Define php_opcache_conf_filename.
+  set_fact:
+    php_opcache_conf_filename: "{{ __php_opcache_conf_filename }}"
+  when: php_opcache_conf_filename is not defined
+
+- name: Define php_fpm_conf_path.
+  set_fact:
+    php_fpm_conf_path: "{{ __php_fpm_conf_path }}"
+  when: php_fpm_conf_path is not defined
+
+# Installation tasks
+- include_tasks: install.yml
+  when: php_install_from_source == false
+
+# Install PHP from source when php_install_from_source is true.
+- include_tasks: install-from-source.yml
+  when: php_install_from_source == true
+
+# Configure PHP
+- include_tasks: configure.yml
+- include_tasks: configure-apcu.yml
+- include_tasks: configure-opcache.yml
+- include_tasks: configure-fpm.yml
